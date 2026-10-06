@@ -1,22 +1,40 @@
+import os
 import psycopg
 from datetime import date, timedelta
+from dotenv import load_dotenv
 
 
 # ==================================================
-# 1. CONEXÃO COM O POSTGRESQL
+# 1. CARREGAR VARIÁVEIS DO ARQUIVO .ENV
 # ==================================================
+
+load_dotenv()
+
+
+# ==================================================
+# 2. CONEXÃO COM O POSTGRESQL
+# ==================================================
+
+host = os.getenv("DB_HOST")
+port = os.getenv("DB_PORT")
+dbname = os.getenv("DB_NAME")
+user = os.getenv("DB_USER")
+password = os.getenv("DB_PASSWORD")
+
 
 connection = psycopg.connect(
-    host="localhost",
-    port=5432,
-    dbname="3C_CONTACT_CENTER",
-    user="postgres",
-    password="Tr4sh4!0*"
+    host=host,
+    port=port,
+    dbname=dbname,
+    user=user,
+    password=password
 )
+
+print("Conexão com PostgreSQL realizada com sucesso!")
 
 
 # ==================================================
-# 2. PERÍODO DA DIM_DATE
+# 3. PERÍODO DA DIM_DATE
 # ==================================================
 
 data_inicial = date(2026, 1, 1)
@@ -24,7 +42,7 @@ data_final = date(2026, 12, 31)
 
 
 # ==================================================
-# 3. FERIADOS
+# 4. FERIADOS
 # ==================================================
 
 feriados = {
@@ -41,7 +59,7 @@ feriados = {
 
 
 # ==================================================
-# 4. NOMES DOS MESES
+# 5. NOMES DOS MESES
 # ==================================================
 
 nomes_meses = {
@@ -61,7 +79,7 @@ nomes_meses = {
 
 
 # ==================================================
-# 5. NOMES DOS DIAS DA SEMANA
+# 6. NOMES DOS DIAS DA SEMANA
 # ==================================================
 
 nomes_dias = {
@@ -76,14 +94,14 @@ nomes_dias = {
 
 
 # ==================================================
-# 6. LISTA QUE VAI GUARDAR OS REGISTROS
+# 7. LISTA QUE VAI GUARDAR OS REGISTROS
 # ==================================================
 
 registros = []
 
 
 # ==================================================
-# 7. GERAR OS REGISTROS
+# 8. GERAR OS REGISTROS
 # ==================================================
 
 data_atual = data_inicial
@@ -142,7 +160,7 @@ print(f"Registros preparados: {len(registros)}")
 
 
 # ==================================================
-# 8. INSERIR OS REGISTROS NO POSTGRESQL
+# 9. INSERIR OS REGISTROS NO POSTGRESQL
 # ==================================================
 
 cursor = connection.cursor()
@@ -157,8 +175,8 @@ sql = """
         month_name,
         week_of_year,
         day_of_month,
-        day_of_week,
         day_name,
+        day_of_week,
         is_weekend,
         is_holiday,
         holiday_name,
@@ -174,17 +192,16 @@ cursor.executemany(sql, registros)
 
 
 # ==================================================
-# 9. CONFIRMAR A TRANSAÇÃO
+# 10. CONFIRMAR A TRANSAÇÃO
 # ==================================================
 
 connection.commit()
-
 
 print("Dados inseridos com sucesso!")
 
 
 # ==================================================
-# 10. VERIFICAR QUANTIDADE DE REGISTROS
+# 11. VERIFICAR QUANTIDADE DE REGISTROS
 # ==================================================
 
 cursor.execute("""
@@ -198,7 +215,7 @@ print(f"Registros existentes na dim_date: {quantidade}")
 
 
 # ==================================================
-# 11. ENCERRAR
+# 12. ENCERRAR
 # ==================================================
 
 cursor.close()
