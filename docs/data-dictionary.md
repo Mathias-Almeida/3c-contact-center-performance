@@ -27,3 +27,29 @@ DIR001
 └── SINT001
     └── GER001
         └── COO001
+        
+## dim_team
+
+Tabela responsável por representar as equipes operacionais do Contact Center.
+
+Cada registro representa uma equipe operacional associada a um supervisor.
+
+| Campo | Tipo | Obrigatório | Descrição |
+|---|---|---|---|
+| team_key | SMALLINT | Sim | Chave substituta utilizada internamente pelo banco de dados. |
+| team_code | VARCHAR(20) | Sim | Código de negócio da equipe. |
+| team_name | VARCHAR(100) | Sim | Nome da equipe. |
+| supervisor_key | SMALLINT | Sim | Chave do supervisor responsável pela equipe. Referencia `dim_supervisor.supervisor_key`. |
+| is_active | BOOLEAN | Sim | Indica se a equipe está ativa. |
+| created_date | DATE | Sim | Data de criação do registro. |
+
+### Regra de relacionamento
+
+No modelo inicial, cada supervisor está associado a uma equipe principal.
+
+A relação é:
+
+```text
+Supervisor
+   ↓
+Equipe                
