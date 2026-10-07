@@ -60,3 +60,120 @@ Diretoria
 → Supervisor
 
 Inicialmente, os 220 supervisores são distribuídos entre as 20 coordenações, resultando em 11 supervisores por coordenação.
+
+## dim_shift
+
+### Objetivo
+
+A `dim_shift` representa as jornadas de trabalho disponíveis na operação do Contact Center.
+
+A dimensão foi modelada para permitir diferentes horários de entrada e diferentes durações de jornada, refletindo a flexibilidade normalmente encontrada em operações de atendimento e Workforce Management (WFM).
+
+### Granularidade
+
+**1 linha = 1 jornada de trabalho possível.**
+
+Cada registro representa uma combinação entre:
+
+- horário de entrada;
+- duração da jornada;
+- horário de saída;
+- tipo de jornada.
+
+A tabela não representa a escala de um agente em um determinado dia. A associação entre um agente, uma data e uma jornada será realizada posteriormente pela `fact_schedule`.
+
+### Estrutura
+
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `shift_key` | SMALLSERIAL | Chave substituta da jornada |
+| `shift_code` | VARCHAR(20) | Código único da jornada |
+| `shift_name` | VARCHAR(100) | Nome descritivo da jornada |
+| `start_time` | TIME | Horário de início |
+| `end_time` | TIME | Horário de término |
+| `duration_minutes` | SMALLINT | Duração da jornada em minutos |
+| `shift_hours` | NUMERIC(4,2) | Duração da jornada em horas |
+| `is_overnight` | BOOLEAN | Indica se a jornada ultrapassa a meia-noite |
+| `shift_type` | VARCHAR(30) | Classificação da jornada |
+| `is_active` | BOOLEAN | Indica se a jornada está ativa |
+| `created_date` | DATE | Data de criação do registro |
+
+### Regra de geração
+
+A dimensão possui horários de entrada em intervalos de **10 minutos**, cobrindo todo o período de 24 horas.
+
+São considerados 144 horários possíveis:
+
+```text
+00:00, 00:10, 00:20, ..., 23:40, 23:50
+```
+
+Para cada horário de entrada são consideradas quatro durações:
+
+- 4 horas;
+- 6 horas;
+- 7 horas;
+- 8 horas.
+
+Portanto:
+
+```text
+144 horários × 4 durações = 576 jornadas
+```
+
+A dimensão contém inicialmente **576 registros**.
+
+### Tipos de jornada
+
+| Duração | `shift_type` |
+|---:|---|
+| 4 horas | Part-time |
+| 6 horas | Intermediário |
+| 7 horas | Intermediário |
+| 8 horas | Integral |
+
+### Jornadas overnight
+
+Uma jornada é classificada como `is_overnight = TRUE` quando seu horário de término ocorre no dia seguinte ao horário de início.
+
+Exemplo:
+
+```text
+Início: 18:00
+Duração: 8 horas
+Término: 02:00
+is_overnight: TRUE
+```
+
+Jornadas que terminam antes ou exatamente no limite do mesmo dia permanecem como `is_overnight = FALSE`.
+
+### Regra de utilização
+
+A `dim_shift` representa **possibilidades de jornada**, e não a jornada efetivamente trabalhada por um agente.
+
+A jornada efetivamente atribuída a cada agente em determinada data será registrada posteriormente na `fact_schedule`.
+
+Isso permite que um mesmo agente tenha jornadas diferentes ao longo do tempo, sem alterar seu cadastro na `dim_agent`.
+
+### Relação com outras tabelas
+
+```text
+dim_shift
+    ↓
+fact_schedule
+    ↓
+dim_agent
+```
+
+A `fact_schedule` utilizará `shift_key` para identificar a jornada planejada de cada agente em determinado período.
+
+### Observação de modelagem
+
+A granularidade de entrada da jornada é de **10 minutos**, enquanto os dados operacionais intradiários da 3C utilizarão intervalos de **30 minutos**.
+
+Essa diferença é intencional:
+
+- **10 minutos:** maior flexibilidade para representar horários de entrada e saída;
+- **30 minutos:** granularidade operacional utilizada para demanda, capacidade, aderência e demais indicadores intradiários.
+
+Dessa forma, a dimensão de jornada possui maior precisão temporal sem aumentar desnecessariamente a granularidade das tabelas factuais operacionais.
