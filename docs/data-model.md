@@ -301,3 +301,23 @@ Equipe:       84
 Shift:        327
 Skill:        SAC Voice
 Status:       Escalado
+
+### fact_demand
+
+A `fact_demand` representa a demanda operacional do contact center ao longo do tempo.
+
+Sua granularidade é:
+
+> 1 dia × 1 intervalo de 30 minutos × 1 skill.
+
+Relacionamentos principais:
+
+```text
+                    dim_date
+                       │
+                       │
+                       ▼
+dim_interval ─────► fact_demand ◄───── dim_skill
+                                          │
+                                          ▼
+                                    dim_channel

@@ -52,4 +52,25 @@ A relação é:
 ```text
 Supervisor
    ↓
-Equipe                
+Equipe              
+
+## fact_demand
+
+### Objetivo
+
+A tabela `fact_demand` representa a demanda operacional do contact center ao longo do tempo.
+
+Ela registra o volume de contatos, o tempo médio de atendimento e indicadores relacionados à espera e ao nível de serviço para cada skill em cada intervalo operacional.
+
+A tabela constitui a principal fonte de dados para representar a demanda que deverá ser atendida pela capacidade operacional do contact center.
+
+### Granularidade
+
+> 1 registro = 1 dia × 1 intervalo de 30 minutos × 1 skill.
+
+Exemplo:
+
+```text
+Data:       15/03/2026
+Intervalo:  10:30–11:00
+Skill:      V001 - SAC Voice
