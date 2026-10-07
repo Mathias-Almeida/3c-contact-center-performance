@@ -266,3 +266,38 @@ O vínculo entre agente e skill é iniciado na data de admissão do agente:
 
 ```text
 valid_from = hire_date
+
+## fact_schedule
+
+### Objetivo
+
+A tabela `fact_schedule` representa a escala planejada dos agentes do contact center ao longo do tempo.
+
+Ela registra quais agentes foram escalados para trabalhar em determinada data, em qual equipe, em qual skill e em qual jornada de trabalho.
+
+A tabela representa o planejamento operacional e não a presença efetiva do agente.
+
+Dessa forma, `fact_schedule` é utilizada como base para análises de:
+
+- Headcount escalado;
+- cobertura operacional;
+- horas planejadas;
+- distribuição de jornadas;
+- distribuição de skills;
+- comparação entre capacidade planejada e demanda;
+- aderência entre escala planejada e execução;
+- planejamento de Workforce Management (WFM).
+
+### Granularidade
+
+> 1 registro = 1 agente escalado para 1 jornada de trabalho em 1 determinado dia.
+
+Exemplo conceitual:
+
+```text
+Agente:       1250
+Data:         15/03/2026
+Equipe:       84
+Shift:        327
+Skill:        SAC Voice
+Status:       Escalado
