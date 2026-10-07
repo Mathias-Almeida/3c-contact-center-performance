@@ -177,3 +177,92 @@ Essa diferença é intencional:
 - **30 minutos:** granularidade operacional utilizada para demanda, capacidade, aderência e demais indicadores intradiários.
 
 Dessa forma, a dimensão de jornada possui maior precisão temporal sem aumentar desnecessariamente a granularidade das tabelas factuais operacionais.
+
+## bridge_agent_skill
+
+### Objetivo
+
+A `bridge_agent_skill` representa os vínculos entre agentes e habilidades de atendimento.
+
+A tabela foi criada porque um agente pode possuir mais de uma skill. Dessa forma, o relacionamento entre `dim_agent` e `dim_skill` é do tipo muitos-para-muitos, sendo necessária uma tabela associativa.
+
+A bridge permite identificar:
+- quais skills cada agente possui;
+- qual é sua skill principal;
+- quais são suas skills secundárias;
+- o nível de proficiência em cada skill;
+- o período de validade do vínculo.
+
+### Granularidade
+
+**1 linha = 1 vínculo entre um agente e uma skill.**
+
+Um mesmo agente pode aparecer várias vezes na tabela, desde que esteja associado a skills diferentes.
+
+Exemplo conceitual:
+
+| Agente | Skill | Principal |
+|---|---|---|
+| AGT00001 | SAC Voice | Sim |
+| AGT00001 | SAC Chat | Não |
+| AGT00001 | SAC WhatsApp | Não |
+
+Nesse exemplo, o agente possui três skills, mas apenas uma é considerada principal.
+
+### Estrutura
+
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `agent_skill_key` | SERIAL | Chave substituta do vínculo |
+| `agent_key` | INTEGER | Referência ao agente |
+| `skill_key` | SMALLINT | Referência à skill |
+| `skill_level` | VARCHAR(30) | Nível de proficiência |
+| `is_primary` | BOOLEAN | Indica se é a skill principal do agente |
+| `valid_from` | DATE | Data de início do vínculo |
+| `valid_to` | DATE | Data de término do vínculo |
+| `is_active` | BOOLEAN | Indica se o vínculo está ativo |
+
+### Níveis de proficiência
+
+Foram definidos quatro níveis:
+
+- Iniciante
+- Intermediário
+- Avançado
+- Especialista
+
+A distribuição utilizada na geração sintética foi:
+
+| Nível | Probabilidade |
+|---|---:|
+| Iniciante | 15% |
+| Intermediário | 50% |
+| Avançado | 30% |
+| Especialista | 5% |
+
+### Regra de associação com as operações
+
+Os agentes recebem suas skills de acordo com a operação de sua equipe.
+
+| Operação | Skill principal | Skills secundárias possíveis |
+|---|---|---|
+| SAC | V001 — SAC Voice | C001, W001, E001 |
+| Financeiro | V002 — Financeiro Voice | W002 |
+| Retenção | V003 — Retenção Voice | Nenhuma |
+| Suporte Técnico | V004 — Suporte Técnico Voice | C002, W003 |
+| Vendas | V005 — Vendas Voice | C003 |
+
+Cada agente recebe obrigatoriamente uma skill principal.
+
+Quando existem skills secundárias disponíveis:
+- 60% de probabilidade de receber uma segunda skill;
+- quando existem pelo menos duas opções secundárias, 20% de probabilidade de receber uma terceira skill.
+
+A geração utiliza `SEED = 42`, garantindo reprodutibilidade dos dados sintéticos.
+
+### Regras temporais
+
+O vínculo entre agente e skill é iniciado na data de admissão do agente:
+
+```text
+valid_from = hire_date
