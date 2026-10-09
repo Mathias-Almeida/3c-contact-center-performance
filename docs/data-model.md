@@ -322,26 +322,64 @@ dim_interval ─────► fact_demand ◄───── dim_skill
                                           ▼
                                     dim_channel
 
+# Data Model — 3C Contact Center Performance Analytics
+
+## Visão geral
+
+O modelo de dados do projeto 3C representa uma operação fictícia de contact center, com informações organizacionais, agentes, jornadas, demanda, atividades operacionais e ausências.
+
+## Dimensões
+
+- `dim_date`: calendário operacional.
+- `dim_interval`: intervalos de 30 minutos.
+- `dim_operation`: operações.
+- `dim_channel`: canais de atendimento.
+- `dim_skill`: habilidades operacionais.
+- `dim_supervisor`: supervisores.
+- `dim_organization`: estrutura organizacional.
+- `dim_team`: equipes.
+- `dim_shift`: jornadas.
+- `dim_agent`: agentes.
+- `dim_absence_type`: tipos de ausência.
+
+## Tabelas fato
+
+### `fact_schedule`
+
+Registra as jornadas programadas dos agentes por data.
+
+### `fact_demand`
+
+Registra a demanda operacional por data, intervalo e habilidade.
+
 ### `fact_agent_interval`
 
-A `fact_agent_interval` representa a execução operacional em granularidade intraday, com intervalos de 30 minutos por agente.
-
-A tabela complementa `fact_schedule`, que representa o planejamento. Enquanto a escala informa quando o agente deveria trabalhar, a fato intraday registra os minutos escalados, disponíveis e produtivos, além da atividade e do status operacional.
-
-A jornada é recuperada pelo relacionamento:
-
-`fact_agent_interval` → `fact_schedule` → `dim_shift`
-
-A tabela utiliza uma chave estrangeira opcional para `fact_schedule`, permitindo que os registros sejam relacionados à escala correspondente. A restrição de unicidade do grão impede duplicações para o mesmo agente, data operacional e intervalo.
-
-A estrutura servirá de base para análises de aderência, shrinkage, disponibilidade e produtividade. O cálculo definitivo desses indicadores será implementado posteriormente na camada analítica, após a integração com as ausências e a demanda.
+Registra a situação operacional dos agentes por intervalo de 30 minutos, incluindo presença, disponibilidade, produtividade, atividades auxiliares e ausências.
 
 ### `fact_absence`
 
-A `fact_absence` registra ocorrências de ausência de agentes, incluindo o tipo, a duração e o período afetado. Cada ocorrência pode ser relacionada à escala correspondente por meio de `schedule_key`.
+Registra ocorrências individuais de ausência, incluindo tipo, início, término, duração e jornada associada.
 
-A tabela complementa `fact_schedule`, que representa o planejamento, e `fact_agent_interval`, que representa a execução intraday.
+## Relacionamento e reconciliação de ausências
 
-O relacionamento entre essas tabelas permitirá identificar a capacidade planejada que foi afetada por ausências, distinguir ausências integrais de parciais e calcular indicadores de absenteísmo com denominadores consistentes.
+A tabela `fact_absence` registra as ocorrências de ausência. A tabela `fact_agent_interval` registra o impacto dessas ocorrências nos intervalos operacionais.
 
-Os dados são sintéticos e devem ser interpretados como parte de um cenário demonstrativo de Workforce Management, não como estatísticas observadas de um contact center real.
+A reconciliação utiliza `schedule_key`, `date_key` e a sobreposição entre os horários de ausência e os limites dos intervalos.
+
+O campo `absence_minutes` registra os minutos sobrepostos em cada intervalo. Os campos `available_minutes_before_absence` e `productive_minutes_before_absence` preservam os valores originais utilizados no cálculo.
+
+A disponibilidade reconciliada é limitada a zero como mínimo e ao valor original como limite do desconto. A produtividade é recalculada proporcionalmente à disponibilidade restante.
+
+Essa abordagem é uma aproximação analítica: como o modelo não registra necessariamente a sequência exata de pausas e atendimentos dentro de cada intervalo, os resultados não representam uma reconstrução exata das atividades.
+
+## Cuidados analíticos
+
+- Utilizar `fact_absence` para analisar as ocorrências.
+- Utilizar `fact_agent_interval` para analisar o impacto operacional por intervalo.
+- Não somar os minutos das duas tabelas como se fossem eventos independentes.
+- Definir explicitamente o denominador das taxas de absenteísmo.
+- Tratar os dados como sintéticos e documentar as premissas dos indicadores.
+
+## Objetivo analítico
+
+O modelo dá suporte à construção de indicadores de Workforce Management (WFM), incluindo absenteísmo, aderência, ocupação, produtividade, demanda e capacidade operacional.

@@ -75,70 +75,75 @@ Data:       15/03/2026
 Intervalo:  10:30–11:00
 Skill:      V001 - SAC Voice
 
-## fact_agent_interval — Execução operacional intraday
+## `fact_agent_interval`
 
-**Descrição:** tabela fato que registra a execução operacional dos agentes em intervalos de 30 minutos. Permite comparar a escala planejada com a disponibilidade, as atividades e o tempo produtivo efetivamente registrados na operação.
+**Descrição:** tabela fato com granularidade de agente por intervalo operacional de 30 minutos.
 
-**Grão:** um registro por agente, data operacional e intervalo de 30 minutos.
+**Finalidade:** registrar jornada programada, presença, disponibilidade, produtividade, atividades auxiliares e ausências dos agentes.
 
-**Volume inicial:** 15.088.238 registros.
+**Principais campos:**
 
-**Principais relacionamentos:**
-- `date_key` → `dim_date`
-- `interval_key` → `dim_interval`
-- `agent_key` → `dim_agent`
-- `team_key` → `dim_team`
-- `skill_key` → `dim_skill`
-- `schedule_key` → `fact_schedule`
-
-**Principais indicadores e atributos:**
-- `scheduled_minutes`: minutos previstos na escala dentro do intervalo.
-- `planned_pause_minutes`: minutos de pausas planejadas.
-- `unplanned_pause_minutes`: minutos de indisponibilidade não planejada.
-- `available_minutes`: minutos disponíveis para a operação.
-- `productive_minutes`: minutos classificados como produtivos.
-- `handling_seconds`: tempo de atendimento atribuído ao agente.
-- `contacts_handled`: quantidade de contatos tratados.
-- `operational_status`: situação operacional do agente.
-- `activity_type`: atividade predominante registrada no intervalo.
+- `date_key`: data operacional.
+- `interval_key`: intervalo de 30 minutos.
+- `agent_key`: agente.
+- `team_key`: equipe.
+- `skill_key`: habilidade operacional.
+- `schedule_key`: jornada associada.
+- `operational_status`: estado operacional do agente.
+- `activity_type`: atividade predominante no intervalo.
+- `scheduled_minutes`: minutos programados.
+- `available_minutes`: minutos disponíveis após a reconciliação.
+- `productive_minutes`: minutos produtivos após a reconciliação.
+- `absence_minutes`: minutos de ausência sobrepostos ao intervalo.
+- `available_minutes_before_absence`: disponibilidade original antes da reconciliação.
+- `productive_minutes_before_absence`: produtividade original antes da reconciliação.
+- `handling_seconds`: segundos de atendimento.
+- `contacts_handled`: contatos atendidos.
 
 **Regras de negócio:**
-1. O grão é controlado pela restrição de unicidade de `date_key`, `interval_key` e `agent_key`.
-2. A escala planejada é obtida por meio de `schedule_key`, que referencia `fact_schedule`.
-3. A jornada é identificada por meio de `fact_schedule` e `dim_shift`; a tabela não possui `shift_key` próprio.
-4. Os minutos disponíveis não podem exceder os minutos escalados, e os minutos produtivos não podem exceder os disponíveis.
-5. Os indicadores finais de aderência, ocupação, produtividade e shrinkage serão calculados na camada analítica, respeitando seus respectivos denominadores.
-6. Os campos `handling_seconds` e `contacts_handled` permanecem zerados nesta etapa inicial e deverão ser conciliados com a distribuição da demanda em uma etapa posterior.
 
-**Observação de qualidade:** a geração e a carga inicial foram concluídas com 15.088.238 registros, sem erros, e as validações de consistência foram aprovadas.
+1. Cada registro representa um agente em uma data e intervalo operacional.
+2. Os minutos de ausência são limitados aos minutos programados.
+3. Disponibilidade e produtividade não podem ser negativas.
+4. A produtividade não pode superar a disponibilidade.
+5. Ausências integrais são identificadas pelo status `Ausente`.
+6. Ausências parciais são registradas em `absence_minutes`, sem necessariamente substituir a atividade predominante.
+7. A produtividade após a reconciliação é estimada proporcionalmente à disponibilidade restante.
 
-## fact_absence — Ocorrências de ausência
+**Premissa:** a reconciliação utiliza dados sintéticos e aproximações operacionais, não representando medições reais de um contact center.
 
-**Descrição:** tabela fato que registra ocorrências sintéticas de ausência dos agentes, vinculadas às escalas planejadas, aos tipos de ausência e às datas operacionais.
+## `fact_absence`
 
-**Grão:** uma ocorrência de ausência de um agente em uma data operacional.
+**Descrição:** tabela fato que registra ocorrências de ausência dos agentes.
 
-**Volume inicial:** 43.793 ocorrências.
+**Grão:** uma linha por ocorrência de ausência.
 
-**Principais relacionamentos:**
-- `date_key` → `dim_date`
-- `agent_key` → `dim_agent`
-- `absence_type_key` → `dim_absence_type`
-- `schedule_key` → `fact_schedule`
+**Principais campos:**
 
-**Principais atributos:**
-- `absence_start_datetime`: início da ocorrência.
-- `absence_end_datetime`: término da ocorrência.
+- `absence_key`: identificador da ocorrência.
+- `date_key`: data de referência.
+- `agent_key`: agente associado.
+- `absence_type_key`: tipo de ausência.
+- `schedule_key`: jornada associada, quando disponível.
+- `absence_start_datetime`: início da ausência.
+- `absence_end_datetime`: término da ausência.
 - `absence_minutes`: duração da ocorrência em minutos.
-- `absence_type_key`: classificação da ausência.
-- `schedule_key`: escala relacionada à ocorrência.
+- `created_date`: data de criação do registro.
+
+**Relacionamentos:**
+
+- `dim_date`
+- `dim_agent`
+- `dim_absence_type`
+- `fact_schedule`
 
 **Regras de negócio:**
-1. As ocorrências são geradas por simulação e não representam dados reais de colaboradores.
-2. As ocorrências são vinculadas a escalas para identificar o período de trabalho potencialmente afetado.
-3. A duração deve ser positiva e não pode ultrapassar 1.440 minutos por registro.
-4. O impacto no indicador de absenteísmo deve respeitar a classificação do tipo de ausência em `dim_absence_type`.
-5. Os minutos de ausência deverão ser conciliados com a execução intraday para evitar contabilizar capacidade como disponível durante períodos de ausência.
-6. Férias, folgas, treinamentos e outros eventos não devem ser classificados automaticamente como faltas injustificadas.
 
-**Observação de qualidade:** a carga inicial foi concluída com 43.793 ocorrências. A validação final de integridade e a conciliação com a execução intraday fazem parte das próximas etapas.
+1. O término deve ser posterior ao início.
+2. A duração deve ser positiva e não superior a 1.440 minutos.
+3. As ocorrências são relacionadas aos intervalos operacionais por jornada, data e sobreposição de horários.
+4. A duração da ocorrência não deve ser somada diretamente aos minutos de ausência dos intervalos, pois representam granularidades diferentes.
+
+**Volume registrado na carga atual:** 43.793 ocorrências.
+
+**Origem:** dados sintéticos gerados para o projeto 3C. Os parâmetros utilizados não representam taxas reais de absenteísmo.

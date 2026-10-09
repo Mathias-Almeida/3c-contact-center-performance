@@ -29,8 +29,14 @@ CREATE TABLE fact_agent_interval (
     administrative_minutes SMALLINT NOT NULL DEFAULT 0,
     technical_issue_minutes SMALLINT NOT NULL DEFAULT 0,
 
+    -- Valores operacionais após a reconciliação de ausências
+    absence_minutes SMALLINT NOT NULL DEFAULT 0,
     available_minutes SMALLINT NOT NULL DEFAULT 0,
     productive_minutes SMALLINT NOT NULL DEFAULT 0,
+
+    -- Valores originais preservados antes da reconciliação
+    available_minutes_before_absence SMALLINT NOT NULL,
+    productive_minutes_before_absence SMALLINT NOT NULL,
 
     handling_seconds INTEGER NOT NULL DEFAULT 0,
     contacts_handled INTEGER NOT NULL DEFAULT 0,
@@ -114,6 +120,12 @@ CREATE TABLE fact_agent_interval (
     CONSTRAINT chk_agent_interval_technical
         CHECK (technical_issue_minutes >= 0),
 
+    CONSTRAINT chk_agent_interval_absence
+        CHECK (
+            absence_minutes >= 0
+            AND absence_minutes <= scheduled_minutes
+        ),
+
     CONSTRAINT chk_agent_interval_available
         CHECK (
             available_minutes >= 0
@@ -124,6 +136,19 @@ CREATE TABLE fact_agent_interval (
         CHECK (
             productive_minutes >= 0
             AND productive_minutes <= available_minutes
+        ),
+
+    CONSTRAINT chk_agent_interval_available_before_absence
+        CHECK (
+            available_minutes_before_absence >= 0
+            AND available_minutes_before_absence <= scheduled_minutes
+        ),
+
+    CONSTRAINT chk_agent_interval_productive_before_absence
+        CHECK (
+            productive_minutes_before_absence >= 0
+            AND productive_minutes_before_absence
+                <= available_minutes_before_absence
         ),
 
     CONSTRAINT chk_agent_interval_handling

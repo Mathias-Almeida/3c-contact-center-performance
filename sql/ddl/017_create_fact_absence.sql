@@ -1,3 +1,9 @@
+-- ============================================================
+-- 3C — Contact Center Performance Analytics
+-- Tabela fato: fact_absence
+-- Grão: uma linha por ocorrência de ausência
+-- Origem: dados sintéticos
+-- ============================================================
 
 CREATE TABLE fact_absence (
     absence_key BIGSERIAL PRIMARY KEY,
@@ -10,6 +16,7 @@ CREATE TABLE fact_absence (
     absence_start_datetime TIMESTAMP NOT NULL,
     absence_end_datetime TIMESTAMP NOT NULL,
 
+    -- Duração total da ocorrência, em minutos
     absence_minutes SMALLINT NOT NULL,
 
     created_date DATE NOT NULL,
@@ -41,6 +48,8 @@ CREATE TABLE fact_absence (
             AND absence_minutes <= 1440
         )
 );
+
+-- Índices para consultas analíticas e reconciliação
 
 CREATE INDEX idx_fact_absence_date
     ON fact_absence(date_key);
