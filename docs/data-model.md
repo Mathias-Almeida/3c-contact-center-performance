@@ -335,3 +335,13 @@ A jornada é recuperada pelo relacionamento:
 A tabela utiliza uma chave estrangeira opcional para `fact_schedule`, permitindo que os registros sejam relacionados à escala correspondente. A restrição de unicidade do grão impede duplicações para o mesmo agente, data operacional e intervalo.
 
 A estrutura servirá de base para análises de aderência, shrinkage, disponibilidade e produtividade. O cálculo definitivo desses indicadores será implementado posteriormente na camada analítica, após a integração com as ausências e a demanda.
+
+### `fact_absence`
+
+A `fact_absence` registra ocorrências de ausência de agentes, incluindo o tipo, a duração e o período afetado. Cada ocorrência pode ser relacionada à escala correspondente por meio de `schedule_key`.
+
+A tabela complementa `fact_schedule`, que representa o planejamento, e `fact_agent_interval`, que representa a execução intraday.
+
+O relacionamento entre essas tabelas permitirá identificar a capacidade planejada que foi afetada por ausências, distinguir ausências integrais de parciais e calcular indicadores de absenteísmo com denominadores consistentes.
+
+Os dados são sintéticos e devem ser interpretados como parte de um cenário demonstrativo de Workforce Management, não como estatísticas observadas de um contact center real.

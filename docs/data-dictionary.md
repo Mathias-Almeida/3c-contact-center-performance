@@ -111,3 +111,34 @@ Skill:      V001 - SAC Voice
 6. Os campos `handling_seconds` e `contacts_handled` permanecem zerados nesta etapa inicial e deverão ser conciliados com a distribuição da demanda em uma etapa posterior.
 
 **Observação de qualidade:** a geração e a carga inicial foram concluídas com 15.088.238 registros, sem erros, e as validações de consistência foram aprovadas.
+
+## fact_absence — Ocorrências de ausência
+
+**Descrição:** tabela fato que registra ocorrências sintéticas de ausência dos agentes, vinculadas às escalas planejadas, aos tipos de ausência e às datas operacionais.
+
+**Grão:** uma ocorrência de ausência de um agente em uma data operacional.
+
+**Volume inicial:** 43.793 ocorrências.
+
+**Principais relacionamentos:**
+- `date_key` → `dim_date`
+- `agent_key` → `dim_agent`
+- `absence_type_key` → `dim_absence_type`
+- `schedule_key` → `fact_schedule`
+
+**Principais atributos:**
+- `absence_start_datetime`: início da ocorrência.
+- `absence_end_datetime`: término da ocorrência.
+- `absence_minutes`: duração da ocorrência em minutos.
+- `absence_type_key`: classificação da ausência.
+- `schedule_key`: escala relacionada à ocorrência.
+
+**Regras de negócio:**
+1. As ocorrências são geradas por simulação e não representam dados reais de colaboradores.
+2. As ocorrências são vinculadas a escalas para identificar o período de trabalho potencialmente afetado.
+3. A duração deve ser positiva e não pode ultrapassar 1.440 minutos por registro.
+4. O impacto no indicador de absenteísmo deve respeitar a classificação do tipo de ausência em `dim_absence_type`.
+5. Os minutos de ausência deverão ser conciliados com a execução intraday para evitar contabilizar capacidade como disponível durante períodos de ausência.
+6. Férias, folgas, treinamentos e outros eventos não devem ser classificados automaticamente como faltas injustificadas.
+
+**Observação de qualidade:** a carga inicial foi concluída com 43.793 ocorrências. A validação final de integridade e a conciliação com a execução intraday fazem parte das próximas etapas.
