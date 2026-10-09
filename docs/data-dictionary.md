@@ -74,3 +74,40 @@ Exemplo:
 Data:       15/03/2026
 Intervalo:  10:30–11:00
 Skill:      V001 - SAC Voice
+
+## fact_agent_interval — Execução operacional intraday
+
+**Descrição:** tabela fato que registra a execução operacional dos agentes em intervalos de 30 minutos. Permite comparar a escala planejada com a disponibilidade, as atividades e o tempo produtivo efetivamente registrados na operação.
+
+**Grão:** um registro por agente, data operacional e intervalo de 30 minutos.
+
+**Volume inicial:** 15.088.238 registros.
+
+**Principais relacionamentos:**
+- `date_key` → `dim_date`
+- `interval_key` → `dim_interval`
+- `agent_key` → `dim_agent`
+- `team_key` → `dim_team`
+- `skill_key` → `dim_skill`
+- `schedule_key` → `fact_schedule`
+
+**Principais indicadores e atributos:**
+- `scheduled_minutes`: minutos previstos na escala dentro do intervalo.
+- `planned_pause_minutes`: minutos de pausas planejadas.
+- `unplanned_pause_minutes`: minutos de indisponibilidade não planejada.
+- `available_minutes`: minutos disponíveis para a operação.
+- `productive_minutes`: minutos classificados como produtivos.
+- `handling_seconds`: tempo de atendimento atribuído ao agente.
+- `contacts_handled`: quantidade de contatos tratados.
+- `operational_status`: situação operacional do agente.
+- `activity_type`: atividade predominante registrada no intervalo.
+
+**Regras de negócio:**
+1. O grão é controlado pela restrição de unicidade de `date_key`, `interval_key` e `agent_key`.
+2. A escala planejada é obtida por meio de `schedule_key`, que referencia `fact_schedule`.
+3. A jornada é identificada por meio de `fact_schedule` e `dim_shift`; a tabela não possui `shift_key` próprio.
+4. Os minutos disponíveis não podem exceder os minutos escalados, e os minutos produtivos não podem exceder os disponíveis.
+5. Os indicadores finais de aderência, ocupação, produtividade e shrinkage serão calculados na camada analítica, respeitando seus respectivos denominadores.
+6. Os campos `handling_seconds` e `contacts_handled` permanecem zerados nesta etapa inicial e deverão ser conciliados com a distribuição da demanda em uma etapa posterior.
+
+**Observação de qualidade:** a geração e a carga inicial foram concluídas com 15.088.238 registros, sem erros, e as validações de consistência foram aprovadas.

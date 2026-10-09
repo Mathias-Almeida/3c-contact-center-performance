@@ -321,3 +321,17 @@ dim_interval ─────► fact_demand ◄───── dim_skill
                                           │
                                           ▼
                                     dim_channel
+
+### `fact_agent_interval`
+
+A `fact_agent_interval` representa a execução operacional em granularidade intraday, com intervalos de 30 minutos por agente.
+
+A tabela complementa `fact_schedule`, que representa o planejamento. Enquanto a escala informa quando o agente deveria trabalhar, a fato intraday registra os minutos escalados, disponíveis e produtivos, além da atividade e do status operacional.
+
+A jornada é recuperada pelo relacionamento:
+
+`fact_agent_interval` → `fact_schedule` → `dim_shift`
+
+A tabela utiliza uma chave estrangeira opcional para `fact_schedule`, permitindo que os registros sejam relacionados à escala correspondente. A restrição de unicidade do grão impede duplicações para o mesmo agente, data operacional e intervalo.
+
+A estrutura servirá de base para análises de aderência, shrinkage, disponibilidade e produtividade. O cálculo definitivo desses indicadores será implementado posteriormente na camada analítica, após a integração com as ausências e a demanda.
