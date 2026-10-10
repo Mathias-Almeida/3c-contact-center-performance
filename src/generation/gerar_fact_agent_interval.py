@@ -7,67 +7,35 @@ from datetime import datetime, date, time, timedelta
 # ============================================================
 
 SEED = 42
+CREATED_DATE = date(2026, 1, 1)
 
-random.seed(SEED)
+_SEGUNDOS_DIA = 86_400
 
 
 # ============================================================
 # CONFIGURAÇÃO DAS JORNADAS
 # ============================================================
-#
-# As pausas são definidas como:
-#
-# percentual da jornada -> duração da pausa
-#
-# Exemplo:
-#
-# 6h:
-# 25% -> 10 min
-# 50% -> 20 min
-# 75% -> 10 min
-#
-# 7h:
-# 25% -> 10 min
-# 55% -> 60 min
-#
-# 8h:
-# 25% -> 10 min
-# 50% -> 60 min
-# 75% -> 10 min
-#
-# Observação:
-# Esses valores representam uma política operacional fictícia
-# adotada para o cenário do 3C.
-# ============================================================
 
 CONFIG_JORNADAS = {
-
     "6x1_6h": {
         "duracao_minutos": 360,
-        "pausas": [
-            (0.25, 10),
-            (0.50, 20),
-            (0.75, 10),
-        ],
+        "pausas": [(0.25, 10), (0.50, 20), (0.75, 10)],
     },
-
     "6x1_7h": {
         "duracao_minutos": 420,
-        "pausas": [
-            (0.25, 10),
-            (0.55, 60),
-        ],
+        "pausas": [(0.25, 10), (0.55, 60)],
     },
-
     "5x2_8h": {
         "duracao_minutos": 480,
-        "pausas": [
-            (0.25, 10),
-            (0.50, 60),
-            (0.75, 10),
-        ],
+        "pausas": [(0.25, 10), (0.50, 60), (0.75, 10)],
     },
 }
+
+# Mapas de consulta O(1) para identificar a jornada.
+_JORNADA_POR_DURACAO = {
+    cfg["duracao_minutos"]: nome for nome, cfg in CONFIG_JORNADAS.items()
+}
+_JORNADA_POR_NOME = (("6h", "6x1_6h"), ("7h", "6x1_7h"), ("8h", "5x2_8h"))
 
 
 # ============================================================
@@ -75,19 +43,18 @@ CONFIG_JORNADAS = {
 # ============================================================
 
 CONFIG_SHRINKAGE = {
-
     "Pausa Particular": {
         "probabilidade": 0.018,
         "duracao_min": 5,
         "duracao_max": 10,
     },
-
     "Problema Técnico": {
         "probabilidade": 0.006,
         "duracao_min": 5,
         "duracao_max": 30,
     },
 }
+_SHRINKAGE_ITENS = tuple(CONFIG_SHRINKAGE.items())
 
 
 # ============================================================
@@ -95,30 +62,35 @@ CONFIG_SHRINKAGE = {
 # ============================================================
 
 CONFIG_ATIVIDADES = {
-
     "Treinamento": {
         "probabilidade": 0.0015,
         "duracao_min": 30,
         "duracao_max": 120,
     },
-
     "Reunião": {
         "probabilidade": 0.0010,
         "duracao_min": 30,
         "duracao_max": 60,
     },
-
     "Coaching": {
         "probabilidade": 0.0008,
         "duracao_min": 30,
         "duracao_max": 60,
     },
-
     "Administrativo": {
         "probabilidade": 0.0012,
         "duracao_min": 15,
         "duracao_max": 60,
     },
+}
+_ATIVIDADES_ITENS = tuple(CONFIG_ATIVIDADES.items())
+
+# Campo de minutos de cada tipo de atividade planejada.
+_CAMPO_ATIVIDADE = {
+    "Treinamento": "training_minutes",
+    "Reunião": "meeting_minutes",
+    "Coaching": "coaching_minutes",
+    "Administrativo": "administrative_minutes",
 }
 
 
@@ -126,837 +98,657 @@ CONFIG_ATIVIDADES = {
 # IDENTIFICAÇÃO DA JORNADA
 # ============================================================
 
-def identificar_jornada(
-    shift_name,
-    duration_minutes=None
-):
-    """
-    Identifica a jornada operacional.
-
-    A identificação é feita preferencialmente pela duração
-    da jornada, e não pelo nome do turno.
-
-    Isso evita dependência do padrão textual utilizado em
-    dim_shift.shift_name.
-
-    Jornadas do projeto:
-
-        360 minutos -> 6x1_6h
-        420 minutos -> 6x1_7h
-        480 minutos -> 5x2_8h
-    """
+def identificar_jornada(shift_name, duration_minutes=None):
+    """Identifica a jornada pela duração ou pelo nome da escala."""
 
     if duration_minutes is not None:
-
-        duration_minutes = int(
-            duration_minutes
-        )
-
-        if duration_minutes == 360:
-            return "6x1_6h"
-
-        if duration_minutes == 420:
-            return "6x1_7h"
-
-        if duration_minutes == 480:
-            return "5x2_8h"
-
-    # --------------------------------------------------------
-    # Fallback pelo nome
-    # --------------------------------------------------------
+        jornada = _JORNADA_POR_DURACAO.get(int(duration_minutes))
+        if jornada:
+            return jornada
 
     if shift_name:
-
-        shift_name = str(
-            shift_name
-        ).lower()
-
-        if "6h" in shift_name:
-            return "6x1_6h"
-
-        if "7h" in shift_name:
-            return "6x1_7h"
-
-        if "8h" in shift_name:
-            return "5x2_8h"
+        nome = str(shift_name).lower()
+        for sufixo, jornada in _JORNADA_POR_NOME:
+            if sufixo in nome:
+                return jornada
 
     raise ValueError(
-        "Não foi possível identificar a jornada. "
+        "Não foi possível identificar a jornada: "
         f"shift_name={shift_name!r}, "
         f"duration_minutes={duration_minutes!r}"
     )
 
 
 # ============================================================
-# SOBREPOSIÇÃO ENTRE DOIS INTERVALOS DE DATETIME
+# SOBREPOSIÇÃO TEMPORAL
 # ============================================================
 
-def calcular_sobreposicao(
-    inicio_a,
-    fim_a,
-    inicio_b,
-    fim_b
-):
-    """
-    Retorna a quantidade de minutos de sobreposição
-    entre dois intervalos de datetime.
-    """
+def calcular_sobreposicao(inicio_a, fim_a, inicio_b, fim_b):
+    """Calcula os minutos inteiros de sobreposição entre dois períodos."""
 
-    inicio = max(
-        inicio_a,
-        inicio_b
-    )
-
-    fim = min(
-        fim_a,
-        fim_b
-    )
+    inicio = max(inicio_a, inicio_b)
+    fim = min(fim_a, fim_b)
 
     if fim <= inicio:
         return 0
 
-    segundos = (
-        fim - inicio
-    ).total_seconds()
-
-    return int(
-        round(segundos / 60)
-    )
+    return int(round((fim - inicio).total_seconds() / 60))
 
 
-# ============================================================
-# CRIAÇÃO DAS JANELAS DE PAUSA
-# ============================================================
+def possui_sobreposicao(inicio_a, fim_a, inicio_b, fim_b):
+    """Verifica se dois períodos possuem interseção positiva."""
 
-def gerar_janelas_pausas(
-    planned_start,
-    planned_end,
-    jornada
-):
+    return inicio_a < fim_b and inicio_b < fim_a
 
+
+def somar_minutos_uniao(janelas, inicio_referencia, fim_referencia):
     """
-    Gera as janelas de pausa planejada dentro da jornada.
-
-    A posição da pausa é baseada em um percentual da jornada,
-    com pequena variação aleatória para evitar que todos os
-    agentes façam a pausa exatamente no mesmo minuto.
-
-    As pausas são ordenadas e ajustadas para não se sobrepor.
+    Soma a união temporal das janelas dentro do período de referência,
+    evitando contar duas vezes minutos de eventos sobrepostos.
     """
 
-    config = CONFIG_JORNADAS[jornada]
+    recortes = []
 
-    duracao_jornada = (
-        planned_end - planned_start
-    ).total_seconds() / 60
+    for janela in janelas:
+        inicio = max(janela["inicio"], inicio_referencia)
+        fim = min(janela["fim"], fim_referencia)
 
-    pausas = []
+        if fim > inicio:
+            recortes.append((inicio, fim))
 
-    ultima_fim = planned_start
+    if not recortes:
+        return 0
 
-    for percentual, duracao in config["pausas"]:
+    recortes.sort(key=lambda item: item[0])
 
-        centro = (
-            planned_start
-            + timedelta(
-                minutes=duracao_jornada * percentual
-            )
-        )
+    inicio_atual, fim_atual = recortes[0]
+    total_segundos = 0
 
-        variacao = random.randint(
-            -5,
-            5
-        )
+    for inicio, fim in recortes[1:]:
+        if inicio <= fim_atual:
+            fim_atual = max(fim_atual, fim)
+        else:
+            total_segundos += (fim_atual - inicio_atual).total_seconds()
+            inicio_atual, fim_atual = inicio, fim
 
-        inicio = (
-            centro
-            + timedelta(
-                minutes=variacao
-            )
-            - timedelta(
-                minutes=duracao / 2
-            )
-        )
+    total_segundos += (fim_atual - inicio_atual).total_seconds()
 
-        fim = (
-            inicio
-            + timedelta(
-                minutes=duracao
-            )
-        )
+    return int(round(total_segundos / 60))
 
-        # ----------------------------------------------------
-        # Limites da jornada
-        # ----------------------------------------------------
 
-        limite_inicio = (
-            planned_start
-            + timedelta(minutes=5)
-        )
+def encontrar_segmentos_livres(inicio, fim, janelas_ocupadas):
+    """Retorna os segmentos livres de um período, descontando janelas."""
 
-        limite_fim = (
-            planned_end
-            - timedelta(minutes=5)
-        )
+    if fim <= inicio:
+        return []
 
-        if inicio < limite_inicio:
-            inicio = limite_inicio
-            fim = (
-                inicio
-                + timedelta(minutes=duracao)
-            )
+    ocupadas = []
 
-        if fim > limite_fim:
-            fim = limite_fim
-            inicio = (
-                fim
-                - timedelta(minutes=duracao)
-            )
+    for janela in janelas_ocupadas:
+        recorte_inicio = max(inicio, janela["inicio"])
+        recorte_fim = min(fim, janela["fim"])
 
-        # ----------------------------------------------------
-        # Evitar sobreposição
-        # ----------------------------------------------------
+        if recorte_fim > recorte_inicio:
+            ocupadas.append((recorte_inicio, recorte_fim))
 
-        if inicio < ultima_fim:
+    ocupadas.sort(key=lambda item: item[0])
 
-            inicio = (
-                ultima_fim
-                + timedelta(minutes=2)
-            )
+    segmentos = []
+    cursor = inicio
 
-            fim = (
-                inicio
-                + timedelta(minutes=duracao)
-            )
+    for ocupado_inicio, ocupado_fim in ocupadas:
+        if ocupado_inicio > cursor:
+            segmentos.append((cursor, ocupado_inicio))
 
-        # Se não houver espaço suficiente, ignora a pausa.
-        if fim > planned_end:
+        cursor = max(cursor, ocupado_fim)
 
-            continue
+        if cursor >= fim:
+            break
 
-        pausas.append(
-            {
-                "inicio": inicio,
-                "fim": fim,
-                "duracao": duracao,
-            }
-        )
+    if cursor < fim:
+        segmentos.append((cursor, fim))
 
-        ultima_fim = fim
-
-    return pausas
+    return [(a, b) for a, b in segmentos if b > a]
 
 
 # ============================================================
-# ATIVIDADE PLANEJADA
-# ============================================================
-
-def atividade_planejada_aleatoria(
-    planned_start,
-    planned_end
-):
-
-    """
-    Determina se o agente terá uma atividade planejada.
-
-    A atividade é criada apenas se a probabilidade aleatória
-    for atingida.
-    """
-
-    for atividade, config in CONFIG_ATIVIDADES.items():
-
-        if random.random() <= config["probabilidade"]:
-
-            duracao = random.randint(
-                config["duracao_min"],
-                config["duracao_max"]
-            )
-
-            jornada_minutos = int(
-                (
-                    planned_end - planned_start
-                ).total_seconds() / 60
-            )
-
-            # Mantém a atividade dentro da jornada.
-            duracao = min(
-                duracao,
-                max(15, jornada_minutos - 30)
-            )
-
-            inicio_min = 15
-            inicio_max = max(
-                inicio_min,
-                jornada_minutos - duracao - 15
-            )
-
-            inicio_offset = random.randint(
-                inicio_min,
-                inicio_max
-            )
-
-            inicio = (
-                planned_start
-                + timedelta(
-                    minutes=inicio_offset
-                )
-            )
-
-            fim = (
-                inicio
-                + timedelta(
-                    minutes=duracao
-                )
-            )
-
-            return {
-                "activity_type": atividade,
-                "inicio": inicio,
-                "fim": fim,
-                "duracao": duracao,
-            }
-
-    return None
-
-
-# ============================================================
-# SHRINKAGE NÃO PLANEJADO
-# ============================================================
-
-def shrinkage_nao_planejado(
-    interval_start,
-    interval_end
-):
-
-    """
-    Determina se ocorre uma indisponibilidade não planejada
-    dentro do intervalo.
-    """
-
-    for atividade, config in CONFIG_SHRINKAGE.items():
-
-        if random.random() <= config["probabilidade"]:
-
-            duracao = random.randint(
-                config["duracao_min"],
-                config["duracao_max"]
-            )
-
-            duracao_intervalo = int(
-                (
-                    interval_end - interval_start
-                ).total_seconds() / 60
-            )
-
-            duracao = min(
-                duracao,
-                duracao_intervalo
-            )
-
-            if duracao <= 0:
-                return None
-
-            if duracao >= duracao_intervalo:
-
-                inicio = interval_start
-
-            else:
-
-                inicio_max = (
-                    duracao_intervalo
-                    - duracao
-                )
-
-                deslocamento = random.randint(
-                    0,
-                    inicio_max
-                )
-
-                inicio = (
-                    interval_start
-                    + timedelta(
-                        minutes=deslocamento
-                    )
-                )
-
-            fim = (
-                inicio
-                + timedelta(
-                    minutes=duracao
-                )
-            )
-
-            return {
-                "activity_type": atividade,
-                "inicio": inicio,
-                "fim": fim,
-                "duracao": duracao,
-            }
-
-    return None
-
-
-# ============================================================
-# IDENTIFICAÇÃO DA DATA DO INTERVALO
+# CONSTRUÇÃO DOS DATETIMES DOS INTERVALOS
 # ============================================================
 
 def construir_intervalo_datetime(
     schedule_start,
     schedule_end,
     interval_start_time,
-    interval_end_time
+    interval_end_time,
 ):
-
     """
-    Constrói os datetimes reais de um intervalo de 30 minutos.
-
-    Para jornadas que atravessam meia-noite, os intervalos
-    posteriores à meia-noite são posicionados no dia seguinte.
+    Identifica a ocorrência do intervalo de relógio que mais se sobrepõe
+    à escala (data de início da escala ou dia seguinte).
     """
 
-    data_inicio = schedule_start.date()
-
-    interval_start = datetime.combine(
-        data_inicio,
-        interval_start_time
-    )
-
-    interval_end = datetime.combine(
-        data_inicio,
-        interval_end_time
-    )
-
-    # Intervalo que atravessa meia-noite.
-    if interval_end <= interval_start:
-
-        interval_end += timedelta(
-            days=1
+    if schedule_end <= schedule_start:
+        raise ValueError(
+            f"Período de escala inválido: {schedule_start} - {schedule_end}"
         )
 
-    # --------------------------------------------------------
-    # Jornada que atravessa meia-noite
-    # --------------------------------------------------------
+    melhor_intervalo = None
+    maior_sobreposicao_segundos = -1
 
-    if schedule_end.date() > schedule_start.date():
+    data_base = schedule_start.date()
 
-        # Intervalos cujo horário é anterior ao início da
-        # jornada pertencem ao dia seguinte.
-        if interval_start_time < schedule_start.time():
+    for deslocamento_dias in (0, 1):
+        data_intervalo = data_base + timedelta(days=deslocamento_dias)
 
-            interval_start += timedelta(
-                days=1
-            )
+        inicio = datetime.combine(data_intervalo, interval_start_time)
+        fim = datetime.combine(data_intervalo, interval_end_time)
 
-            interval_end += timedelta(
-                days=1
-            )
+        if fim <= inicio:
+            fim += timedelta(days=1)
 
-    return (
-        interval_start,
-        interval_end
+        sobreposicao_segundos = max(
+            0,
+            (min(schedule_end, fim) - max(schedule_start, inicio))
+            .total_seconds(),
+        )
+
+        if sobreposicao_segundos > maior_sobreposicao_segundos:
+            maior_sobreposicao_segundos = sobreposicao_segundos
+            melhor_intervalo = (inicio, fim)
+
+    return melhor_intervalo
+
+
+def _preparar_intervalos(intervals):
+    """
+    Converte start/end de cada intervalo em segundos desde 00:00,
+    uma única vez, para o pré-filtro por escala.
+    """
+
+    preparados = []
+
+    for intervalo in intervals:
+        _key, inicio, fim = intervalo
+
+        inicio_s = inicio.hour * 3600 + inicio.minute * 60 + inicio.second
+        fim_s = fim.hour * 3600 + fim.minute * 60 + fim.second
+
+        if fim_s <= inicio_s:
+            fim_s += _SEGUNDOS_DIA
+
+        preparados.append((intervalo, inicio_s, fim_s))
+
+    return preparados
+
+
+def _intervalos_da_escala(schedule_start, schedule_end, preparados):
+    """
+    Devolve, na ordem original, apenas os intervalos que têm interseção
+    positiva com a escala (data de início ou dia seguinte).
+
+    Substitui o teste "intervalo a intervalo" com datetimes por
+    comparações de inteiros. É um superconjunto exato de
+    scheduled_minutes > 0, então o resultado final não muda.
+    """
+
+    meia_noite = datetime.combine(schedule_start.date(), time.min)
+    esc_inicio = (schedule_start - meia_noite).total_seconds()
+    esc_fim = (schedule_end - meia_noite).total_seconds()
+
+    for intervalo, inicio_s, fim_s in preparados:
+        for deslocamento in (0, _SEGUNDOS_DIA):
+            if (
+                inicio_s + deslocamento < esc_fim
+                and fim_s + deslocamento > esc_inicio
+            ):
+                yield intervalo
+                break
+
+
+# ============================================================
+# PAUSAS PLANEJADAS — UMA VEZ POR ESCALA
+# ============================================================
+
+def gerar_janelas_pausas(planned_start, planned_end, jornada, rng):
+    """Gera as pausas planejadas para toda a escala."""
+
+    config = CONFIG_JORNADAS[jornada]
+
+    duracao_jornada = int(
+        (planned_end - planned_start).total_seconds() / 60
     )
+
+    limite_inicio = planned_start + timedelta(minutes=5)
+    limite_fim = planned_end - timedelta(minutes=5)
+
+    pausas = []
+    ultima_fim = planned_start
+
+    for percentual, duracao in config["pausas"]:
+        centro = planned_start + timedelta(
+            minutes=duracao_jornada * percentual
+        )
+
+        variacao = rng.randint(-5, 5)
+
+        inicio = centro + timedelta(minutes=variacao - duracao / 2)
+        fim = inicio + timedelta(minutes=duracao)
+
+        if inicio < limite_inicio:
+            inicio = limite_inicio
+            fim = inicio + timedelta(minutes=duracao)
+
+        if fim > limite_fim:
+            fim = limite_fim
+            inicio = fim - timedelta(minutes=duracao)
+
+        if inicio < ultima_fim:
+            inicio = ultima_fim + timedelta(minutes=2)
+            fim = inicio + timedelta(minutes=duracao)
+
+        if inicio < planned_start or fim > planned_end:
+            continue
+
+        if fim <= inicio:
+            continue
+
+        pausas.append({"inicio": inicio, "fim": fim, "duracao": duracao})
+        ultima_fim = fim
+
+    return pausas
+
+
+# ============================================================
+# ATIVIDADE PLANEJADA — UMA VEZ POR ESCALA
+# ============================================================
+
+def atividade_planejada_aleatoria(planned_start, planned_end, pausas, rng):
+    """
+    Sorteia no máximo uma atividade planejada por escala,
+    posicionada fora das pausas planejadas.
+    """
+
+    jornada_minutos = int(
+        (planned_end - planned_start).total_seconds() / 60
+    )
+
+    for atividade, config in _ATIVIDADES_ITENS:
+        if rng.random() > config["probabilidade"]:
+            continue
+
+        duracao_maxima = max(0, jornada_minutos - 30)
+
+        if duracao_maxima < 15:
+            return None
+
+        duracao = min(
+            rng.randint(config["duracao_min"], config["duracao_max"]),
+            duracao_maxima,
+        )
+
+        inicio_min = 15
+        inicio_max = jornada_minutos - duracao - 15
+
+        if inicio_max < inicio_min:
+            continue
+
+        for _ in range(50):
+            inicio = planned_start + timedelta(
+                minutes=rng.randint(inicio_min, inicio_max)
+            )
+            fim = inicio + timedelta(minutes=duracao)
+
+            if not any(
+                possui_sobreposicao(
+                    inicio, fim, pausa["inicio"], pausa["fim"]
+                )
+                for pausa in pausas
+            ):
+                return {
+                    "activity_type": atividade,
+                    "inicio": inicio,
+                    "fim": fim,
+                    "duracao": duracao,
+                }
+
+        return None
+
+    return None
+
+
+# ============================================================
+# SHRINKAGE NÃO PLANEJADO — POR INTERVALO
+# ============================================================
+
+def shrinkage_nao_planejado(
+    interval_start,
+    interval_end,
+    janelas_ocupadas,
+    rng,
+):
+    """
+    Sorteia no máximo um evento não planejado por intervalo, dentro do
+    tempo escalado e fora das janelas planejadas.
+    """
+
+    atividade_escolhida = None
+    config_escolhida = None
+
+    for atividade, config in _SHRINKAGE_ITENS:
+        if rng.random() <= config["probabilidade"]:
+            atividade_escolhida = atividade
+            config_escolhida = config
+            break
+
+    if atividade_escolhida is None:
+        return None
+
+    duracao_min_s = config_escolhida["duracao_min"] * 60
+
+    segmentos_validos = [
+        (inicio, fim)
+        for inicio, fim in encontrar_segmentos_livres(
+            interval_start, interval_end, janelas_ocupadas
+        )
+        if (fim - inicio).total_seconds() >= duracao_min_s
+    ]
+
+    if not segmentos_validos:
+        return None
+
+    inicio_segmento, fim_segmento = rng.choice(segmentos_validos)
+
+    minutos_livres = int(
+        (fim_segmento - inicio_segmento).total_seconds() / 60
+    )
+
+    duracao = min(
+        rng.randint(
+            config_escolhida["duracao_min"],
+            config_escolhida["duracao_max"],
+        ),
+        minutos_livres,
+    )
+
+    deslocamento = rng.randint(0, minutos_livres - duracao)
+
+    inicio = inicio_segmento + timedelta(minutes=deslocamento)
+
+    return {
+        "activity_type": atividade_escolhida,
+        "inicio": inicio,
+        "fim": inicio + timedelta(minutes=duracao),
+        "duracao": duracao,
+    }
+
+
+# ============================================================
+# CONTEXTO OPERACIONAL DA ESCALA
+# ============================================================
+
+def criar_contexto_escala(schedule, rng):
+    """Prepara as pausas e atividades uma única vez por escala."""
+
+    (
+        _schedule_key,
+        _date_key,
+        _agent_key,
+        _team_key,
+        _shift_key,
+        _skill_key,
+        planned_start,
+        planned_end,
+        shift_name,
+        duration_minutes,
+    ) = schedule
+
+    jornada = identificar_jornada(shift_name, duration_minutes)
+
+    pausas = gerar_janelas_pausas(planned_start, planned_end, jornada, rng)
+
+    atividade_planejada = atividade_planejada_aleatoria(
+        planned_start, planned_end, pausas, rng
+    )
+
+    return {
+        "jornada": jornada,
+        "pausas": pausas,
+        "atividade_planejada": atividade_planejada,
+    }
 
 
 # ============================================================
 # GERAÇÃO DE UM INTERVALO
 # ============================================================
 
-def gerar_intervalo(
-    schedule,
-    intervalo
-):
-
+def gerar_intervalo(schedule, intervalo, contexto=None, rng=None):
     """
-    Gera uma linha da fact_agent_interval.
+    Gera um registro para a fact_agent_interval.
 
-    Grain:
-
-        1 agente
-        1 data
-        1 intervalo de 30 minutos
+    As colunas *_before_absence preservam a base anterior à
+    reconciliação com fact_absence.
     """
+
+    if rng is None:
+        rng = random.Random(SEED)
 
     (
         schedule_key,
-        date_key,
+        _date_key,
         agent_key,
         team_key,
-        shift_key,
+        _shift_key,
         skill_key,
         planned_start_datetime,
         planned_end_datetime,
-        shift_name,
-        duration_minutes
+        _shift_name,
+        _duration_minutes,
     ) = schedule
 
+    interval_key, interval_start_time, interval_end_time = intervalo
 
-    (
-        interval_key,
+    if contexto is None:
+        contexto = criar_contexto_escala(schedule, rng)
+
+    interval_start, interval_end = construir_intervalo_datetime(
+        planned_start_datetime,
+        planned_end_datetime,
         interval_start_time,
-        interval_end_time
-    ) = intervalo
-
-    # ========================================================
-    # JORNADA
-    # ========================================================
-
-    jornada = identificar_jornada(
-        shift_name,
-        duration_minutes
+        interval_end_time,
     )
 
-    # ========================================================
-    # DATETIME DO INTERVALO
-    # ========================================================
-
-    interval_start, interval_end = (
-        construir_intervalo_datetime(
-            planned_start_datetime,
-            planned_end_datetime,
-            interval_start_time,
-            interval_end_time
-        )
-    )
-
-    # ========================================================
-    # MINUTOS ESCALADOS
-    # ========================================================
+    scheduled_start = max(planned_start_datetime, interval_start)
+    scheduled_end = min(planned_end_datetime, interval_end)
 
     scheduled_minutes = calcular_sobreposicao(
         planned_start_datetime,
         planned_end_datetime,
         interval_start,
-        interval_end
+        interval_end,
     )
 
-    # Intervalo fora da jornada.
     if scheduled_minutes <= 0:
-
         return None
 
-    # ========================================================
-    # PAUSAS PLANEJADAS
-    # ========================================================
+    # --------------------------------------------------------
+    # Pausas planejadas
+    # --------------------------------------------------------
 
-    pausas = gerar_janelas_pausas(
-        planned_start_datetime,
-        planned_end_datetime,
-        jornada
+    pausas = contexto["pausas"]
+
+    planned_pause_minutes = sum(
+        calcular_sobreposicao(
+            pausa["inicio"], pausa["fim"], scheduled_start, scheduled_end
+        )
+        for pausa in pausas
     )
 
-    planned_pause_minutes = 0
+    janelas_ocupadas = list(pausas)
 
-    for pausa in pausas:
+    # --------------------------------------------------------
+    # Atividade planejada
+    # --------------------------------------------------------
 
-        planned_pause_minutes += (
-            calcular_sobreposicao(
-                pausa["inicio"],
-                pausa["fim"],
-                interval_start,
-                interval_end
-            )
-        )
+    minutos_atividade = {
+        "training_minutes": 0,
+        "meeting_minutes": 0,
+        "coaching_minutes": 0,
+        "administrative_minutes": 0,
+    }
 
-    # ========================================================
-    # ATIVIDADE PLANEJADA
-    # ========================================================
-
-    atividade_planejada = (
-        atividade_planejada_aleatoria(
-            planned_start_datetime,
-            planned_end_datetime
-        )
-    )
-
-    training_minutes = 0
-    meeting_minutes = 0
-    coaching_minutes = 0
-    administrative_minutes = 0
-
-    atividade_planejada_minutes = 0
+    atividade_planejada = contexto["atividade_planejada"]
 
     if atividade_planejada:
-
-        atividade_planejada_minutes = (
-            calcular_sobreposicao(
-                atividade_planejada["inicio"],
-                atividade_planejada["fim"],
-                interval_start,
-                interval_end
-            )
+        atividade_minutos = calcular_sobreposicao(
+            atividade_planejada["inicio"],
+            atividade_planejada["fim"],
+            scheduled_start,
+            scheduled_end,
         )
 
-        if atividade_planejada["activity_type"] == "Treinamento":
+        if atividade_minutos > 0:
+            minutos_atividade[
+                _CAMPO_ATIVIDADE[atividade_planejada["activity_type"]]
+            ] = atividade_minutos
 
-            training_minutes = (
-                atividade_planejada_minutes
-            )
+            janelas_ocupadas.append({
+                "inicio": atividade_planejada["inicio"],
+                "fim": atividade_planejada["fim"],
+            })
 
-        elif atividade_planejada["activity_type"] == "Reunião":
+    training_minutes = minutos_atividade["training_minutes"]
+    meeting_minutes = minutos_atividade["meeting_minutes"]
+    coaching_minutes = minutos_atividade["coaching_minutes"]
+    administrative_minutes = minutos_atividade["administrative_minutes"]
 
-            meeting_minutes = (
-                atividade_planejada_minutes
-            )
+    # Só as janelas que tocam este intervalo importam daqui em diante.
+    # Filtrar antes não altera os resultados (as funções já recortavam),
+    # mas evita listas/ordenações inúteis na maioria dos intervalos.
+    janelas_relevantes = [
+        j for j in janelas_ocupadas
+        if j["inicio"] < scheduled_end and j["fim"] > scheduled_start
+    ]
 
-        elif atividade_planejada["activity_type"] == "Coaching":
-
-            coaching_minutes = (
-                atividade_planejada_minutes
-            )
-
-        elif atividade_planejada["activity_type"] == "Administrativo":
-
-            administrative_minutes = (
-                atividade_planejada_minutes
-            )
-
-    # ========================================================
-    # SHRINKAGE NÃO PLANEJADO
-    # ========================================================
+    # --------------------------------------------------------
+    # Shrinkage não planejado (o RNG é consumido como antes)
+    # --------------------------------------------------------
 
     shrinkage = shrinkage_nao_planejado(
-        interval_start,
-        interval_end
+        scheduled_start,
+        scheduled_end,
+        janelas_relevantes,
+        rng,
     )
 
     unplanned_pause_minutes = 0
     technical_issue_minutes = 0
 
     if shrinkage:
-
-        shrinkage_minutes = calcular_sobreposicao(
+        minutos_evento = calcular_sobreposicao(
             shrinkage["inicio"],
             shrinkage["fim"],
-            interval_start,
-            interval_end
+            scheduled_start,
+            scheduled_end,
         )
 
         if shrinkage["activity_type"] == "Pausa Particular":
+            unplanned_pause_minutes = minutos_evento
+        else:
+            technical_issue_minutes = minutos_evento
 
-            unplanned_pause_minutes = (
-                shrinkage_minutes
-            )
+        janelas_relevantes.append({
+            "inicio": shrinkage["inicio"],
+            "fim": shrinkage["fim"],
+        })
 
-        elif shrinkage["activity_type"] == "Problema Técnico":
+    # --------------------------------------------------------
+    # Disponibilidade (união das janelas: sem dupla contagem)
+    # --------------------------------------------------------
 
-            technical_issue_minutes = (
-                shrinkage_minutes
-            )
+    if janelas_relevantes:
+        shrinkage_minutes = min(
+            scheduled_minutes,
+            somar_minutos_uniao(
+                janelas_relevantes, scheduled_start, scheduled_end
+            ),
+        )
+    else:
+        shrinkage_minutes = 0
 
-    # ========================================================
-    # SHRINKAGE TOTAL
-    # ========================================================
-
-    shrinkage_minutes = (
-        planned_pause_minutes
-        + unplanned_pause_minutes
-        + training_minutes
-        + meeting_minutes
-        + coaching_minutes
-        + administrative_minutes
-        + technical_issue_minutes
-    )
-
-    # ========================================================
-    # LIMITAÇÃO DO SHRINKAGE
-    # ========================================================
-
-    shrinkage_minutes = min(
-        shrinkage_minutes,
-        scheduled_minutes
-    )
-
-    # ========================================================
-    # DISPONIBILIDADE
-    # ========================================================
-
-    available_minutes = max(
-        0,
-        scheduled_minutes
-        - shrinkage_minutes
-    )
-
-    # ========================================================
-    # PRODUTIVIDADE
-    # ========================================================
-    #
-    # Neste estágio ainda não estamos alocando a demanda
-    # diretamente aos agentes.
-    #
-    # Portanto a produtividade representa apenas uma fração
-    # do tempo disponível.
-    #
-    # A produção real será reconciliada posteriormente com
-    # fact_demand.
-    # ========================================================
+    available_minutes = max(0, scheduled_minutes - shrinkage_minutes)
 
     if available_minutes > 0:
-
-        produtividade = random.uniform(
-            0.65,
-            0.90
+        productive_minutes = min(
+            available_minutes,
+            max(0, int(round(available_minutes * rng.uniform(0.65, 0.90)))),
         )
-
-        productive_minutes = int(
-            round(
-                available_minutes
-                * produtividade
-            )
-        )
-
     else:
-
         productive_minutes = 0
 
-    # ========================================================
-    # ATIVIDADE DOMINANTE
-    # ========================================================
+    # --------------------------------------------------------
+    # Classificação operacional
+    # --------------------------------------------------------
 
-    activity_type = "Atendimento"
-
-    if scheduled_minutes <= 0:
-
-        activity_type = "Folga"
-
-    elif planned_pause_minutes > 0:
-
+    if planned_pause_minutes > 0:
         activity_type = "Pausa Planejada"
-
     elif training_minutes > 0:
-
         activity_type = "Treinamento"
-
     elif meeting_minutes > 0:
-
         activity_type = "Reunião"
-
     elif coaching_minutes > 0:
-
         activity_type = "Coaching"
-
     elif administrative_minutes > 0:
-
         activity_type = "Administrativo"
-
     elif unplanned_pause_minutes > 0:
-
         activity_type = "Pausa Particular"
-
     elif technical_issue_minutes > 0:
-
         activity_type = "Problema Técnico"
-
-    # ========================================================
-    # STATUS OPERACIONAL
-    # ========================================================
-
-    if scheduled_minutes <= 0:
-
-        operational_status = "Folga"
-
-    elif available_minutes <= 0:
-
-        operational_status = "Indisponível"
-
     else:
+        activity_type = "Atendimento"
 
-        operational_status = "Trabalhando"
-
-    # ========================================================
-    # FLAGS
-    # ========================================================
-
-    scheduled_flag = True
-
-    present_flag = True
-
-    available_flag = (
-        available_minutes > 0
+    operational_status = (
+        "Indisponível" if available_minutes <= 0 else "Trabalhando"
     )
 
-    productive_flag = (
-        productive_minutes > 0
-    )
-
-    # ========================================================
-    # PRODUÇÃO
-    # ========================================================
-    #
-    # Ainda não vinculamos os contatos da demanda aos agentes.
-    #
-    # Portanto:
-    #
-    # handling_seconds = 0
-    # contacts_handled = 0
-    #
-    # Essa etapa será tratada posteriormente.
-    # ========================================================
-
-    handling_seconds = 0
-
-    contacts_handled = 0
-
-    # ========================================================
-    # DATA DE CRIAÇÃO
-    # ========================================================
-
-    created_date = date(2026, 1, 1)
-
-    # ========================================================
-    # RESULTADO
-    # ========================================================
+    # Data civil do início do intervalo (essencial para turnos noturnos).
+    d = interval_start
+    interval_date_key = d.year * 10000 + d.month * 100 + d.day
 
     return {
-
-        "date_key": date_key,
-
+        "date_key": interval_date_key,
         "interval_key": interval_key,
-
         "agent_key": agent_key,
-
         "team_key": team_key,
-
         "skill_key": skill_key,
-
         "schedule_key": schedule_key,
 
         "operational_status": operational_status,
-
         "activity_type": activity_type,
 
-        "scheduled_flag": scheduled_flag,
-
-        "present_flag": present_flag,
-
-        "available_flag": available_flag,
-
-        "productive_flag": productive_flag,
+        "scheduled_flag": True,
+        "present_flag": True,
+        "available_flag": available_minutes > 0,
+        "productive_flag": productive_minutes > 0,
 
         "scheduled_minutes": scheduled_minutes,
-
         "planned_pause_minutes": planned_pause_minutes,
-
         "unplanned_pause_minutes": unplanned_pause_minutes,
-
         "training_minutes": training_minutes,
-
         "meeting_minutes": meeting_minutes,
-
         "coaching_minutes": coaching_minutes,
-
         "administrative_minutes": administrative_minutes,
-
         "technical_issue_minutes": technical_issue_minutes,
 
-        "available_minutes": available_minutes,
+        "absence_minutes": 0,
 
+        "available_minutes": available_minutes,
         "productive_minutes": productive_minutes,
 
-        "handling_seconds": handling_seconds,
+        "available_minutes_before_absence": available_minutes,
+        "productive_minutes_before_absence": productive_minutes,
 
-        "contacts_handled": contacts_handled,
-
-        "created_date": created_date,
+        "handling_seconds": 0,
+        "contacts_handled": 0,
+        "created_date": CREATED_DATE,
     }
 
 
@@ -967,59 +759,45 @@ def gerar_intervalo(
 def gerar_fact_agent_interval(
     schedules,
     intervals,
-    chunk_size=50_000
+    chunk_size=50_000,
 ):
-
     """
-    Gera a fact_agent_interval em lotes.
+    Gera registros em lotes para a fact_agent_interval.
 
-    Não mantém todos os registros em memória.
-
-    Parameters
-    ----------
-    schedules:
-        Lista de escalas provenientes da fact_schedule.
-
-    intervals:
-        Lista de intervalos provenientes da dim_interval.
-
-    chunk_size:
-        Quantidade máxima de registros por lote.
+    Usa um RNG local e determinístico (reprodutível para a mesma SEED).
+    Para cada escala, só percorre os intervalos que a atravessam.
     """
 
+    if chunk_size <= 0:
+        raise ValueError("chunk_size deve ser maior que zero.")
+
+    rng = random.Random(SEED)
+    preparados = _preparar_intervalos(intervals)  # uma vez só
     lote = []
 
-    total_processado = 0
-
     for schedule in schedules:
+        contexto = criar_contexto_escala(schedule, rng)
 
-        for intervalo in intervals:
+        planned_start, planned_end = schedule[6], schedule[7]
 
+        for intervalo in _intervalos_da_escala(
+            planned_start, planned_end, preparados
+        ):
             registro = gerar_intervalo(
-                schedule,
-                intervalo
+                schedule=schedule,
+                intervalo=intervalo,
+                contexto=contexto,
+                rng=rng,
             )
 
             if registro is None:
-
                 continue
 
-            lote.append(
-                registro
-            )
-
-            total_processado += 1
+            lote.append(registro)
 
             if len(lote) >= chunk_size:
-
                 yield lote
-
                 lote = []
 
-    # ========================================================
-    # ÚLTIMO LOTE
-    # ========================================================
-
     if lote:
-
         yield lote
