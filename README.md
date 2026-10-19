@@ -221,25 +221,25 @@ O projeto está sendo desenvolvido de forma incremental.
 - [x] Criação da `dim_date`
 - [x] Criação da `dim_interval`
 - [x] Criação da `dim_operation`
+- [x] `dim_channel`
+- [x] `dim_skill`
+- [x] `dim_supervisor`
+- [x] `dim_team`
+- [x] `dim_shift`
+- [x] `dim_agent`
+- [x] `dim_absence_type`
+- [x] `bridge_agent_skill`
+- [x] `fact_schedule`
+- [x] `fact_demand`
+- [x] `fact_agent_interval`
+- [x] `fact_absence`
+- [x] Geração completa dos dados sintéticos
+- [x] Validação dos dados
+- [x] Camada analítica SQL
+- [x] KPIs
 
 ### Em desenvolvimento
 
-- [ ] `dim_channel`
-- [ ] `dim_skill`
-- [ ] `dim_supervisor`
-- [ ] `dim_team`
-- [ ] `dim_shift`
-- [ ] `dim_agent`
-- [ ] `dim_absence_type`
-- [ ] `bridge_agent_skill`
-- [ ] `fact_schedule`
-- [ ] `fact_demand`
-- [ ] `fact_agent_interval`
-- [ ] `fact_absence`
-- [ ] Geração completa dos dados sintéticos
-- [ ] Validação dos dados
-- [ ] Camada analítica SQL
-- [ ] KPIs
 - [ ] Análises exploratórias
 - [ ] Dashboard Power BI
 
